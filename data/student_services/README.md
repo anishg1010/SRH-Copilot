@@ -1,0 +1,5 @@
+# student_services knowledge base
+
+Drop this agent's institutional documents (.txt / .md / .pdf) here, then run:
+
+    python -m copilot.rag.ingest student_services ./data/student_services
