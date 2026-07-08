@@ -138,3 +138,4 @@ rate-limiting) and **infrastructure** (Kubernetes/Terraform) are not included he
 is app code only. The `BaseAgent.chat` seam (single entry point per request) and the
 per-thread Postgres checkpointer are where auth, logging, and guardrails will slot in later.
 ```
+
