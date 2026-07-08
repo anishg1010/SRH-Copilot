@@ -56,3 +56,24 @@ if __name__ == "__main__":
         fn()
         print(f"✓ {fn.__name__}")
     print("\n✓ all smoke tests passed")
+
+
+def test_extractors_dispatch_and_supported_exts():
+    from copilot.rag.extractors import SUPPORTED_EXTS
+    for e in (".pdf", ".docx", ".pptx", ".txt", ".md", ".jpg", ".png"):
+        assert e in SUPPORTED_EXTS
+
+
+def test_structure_aware_chunking_respects_sections():
+    from copilot.rag.extractors import Block
+    from copilot.rag.chunking import chunk_blocks
+    blocks = [
+        Block(text="Section A", page=1, section="Section A", meta={"heading": True}),
+        Block(text="alpha " * 40, page=1, section="Section A"),
+        Block(text="Section B", page=2, section="Section B", meta={"heading": True}),
+        Block(text="beta " * 40, page=2, section="Section B"),
+    ]
+    chunks = chunk_blocks(blocks, size=100, overlap=15)
+    assert chunks
+    for c in chunks:
+        assert not ("alpha" in c.text and "beta" in c.text)  # sections never merge

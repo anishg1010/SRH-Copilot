@@ -6,3 +6,7 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 .ipynb_checkpoints/
+data/teaching/**
+data/teaching/**
+!data/teaching/README.md
+data/teaching/.ipynb_checkpoints/

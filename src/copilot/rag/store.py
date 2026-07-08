@@ -37,6 +37,11 @@ def init_db() -> None:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS documents_collection_idx ON documents (collection);"
         )
+        # GIN index on metadata so topic filters (metadata->>'topic') stay fast.
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS documents_metadata_idx "
+            "ON documents USING gin (metadata);"
+        )
     print("✓ pgvector enabled, shared `documents` table + indexes ready.")
 
 
