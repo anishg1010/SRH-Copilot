@@ -1,12 +1,11 @@
-"""Collection-scoped similarity search with metadata + optional topic filter."""
+"""Chroma-based collection-scoped retrieval with metadata + optional topic filter."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-import psycopg
-
-from copilot.core.settings import settings
-from copilot.rag.embeddings import embed_query, vec_literal
+from copilot.core.config import config as settings
+from copilot.rag.embeddings import embed_query
+from copilot.rag.store import get_collection
 
 
 @dataclass
@@ -27,60 +26,58 @@ def retrieve(
     topics: list[str] | None = None,
     min_score: float | None = None,
 ) -> list[Passage]:
-    """Return the k most relevant passages within a collection.
+    """Return the k most relevant passages within a Chroma collection.
 
     Args:
         collection: agent slug.
-        query: the search text.
+        query: search text.
         k: number of results (defaults to settings.retrieve_k).
-        topics: if given, restrict to these metadata.topic values (folder names).
-        min_score: if given, drop passages below this cosine similarity (0..1).
+        topics: restrict to these metadata.topic values (folder names).
+        min_score: drop passages below this cosine similarity (0..1).
     """
     k = k or settings.retrieve_k
-    qvec = vec_literal(embed_query(query))
+    col = get_collection(collection)
+    qvec = embed_query(query)
 
-    where = ["collection = %s"]
-    params: list = [qvec, collection]  # qvec first (used in SELECT), then collection
-    if topics:
-        where.append("metadata->>'topic' = ANY(%s)")
-        params.append(topics)
-    params.append(qvec)  # ORDER BY vector
-    params.append(k)
+    where = {"topic": {"$in": topics}} if topics else None
+    res = col.query(
+        query_embeddings=[qvec],
+        n_results=k,
+        where=where,
+        include=["documents", "metadatas", "distances"],
+    )
 
-    sql = f"""
-        SELECT source, content, 1 - (embedding <=> %s::vector) AS score,
-               metadata->>'topic'      AS topic,
-               (metadata->>'page_start')::int AS page_start,
-               (metadata->>'page_end')::int   AS page_end,
-               metadata->>'section'    AS section
-        FROM documents
-        WHERE {' AND '.join(where)}
-        ORDER BY embedding <=> %s::vector
-        LIMIT %s;
-    """
-    with psycopg.connect(settings.database_url) as conn, conn.cursor() as cur:
-        cur.execute(sql, params)
-        rows = cur.fetchall()
+    docs = (res.get("documents") or [[]])[0]
+    metas = (res.get("metadatas") or [[]])[0]
+    dists = (res.get("distances") or [[]])[0]
 
-    passages = [
-        Passage(source=s, content=c, score=float(sc), topic=tp,
-                page_start=ps, page_end=pe, section=sec)
-        for s, c, sc, tp, ps, pe, sec in rows
-    ]
-    if min_score is not None:
-        passages = [p for p in passages if p.score >= min_score]
+    passages: list[Passage] = []
+    for doc, meta, dist in zip(docs, metas, dists):
+        score = 1.0 - float(dist)   # cosine distance → similarity
+        if min_score is not None and score < min_score:
+            continue
+        meta = meta or {}
+        passages.append(Passage(
+            source=meta.get("source", "?"),
+            content=doc,
+            score=score,
+            topic=meta.get("topic"),
+            page_start=meta.get("page_start"),
+            page_end=meta.get("page_end"),
+            section=meta.get("section"),
+        ))
     return passages
 
 
 def list_topics(collection: str) -> list[tuple[str, int]]:
-    """Return (topic, chunk_count) pairs for a collection — handy for tuning."""
-    with psycopg.connect(settings.database_url) as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT metadata->>'topic' AS topic, COUNT(*) "
-            "FROM documents WHERE collection = %s GROUP BY topic ORDER BY topic;",
-            (collection,),
-        )
-        return [(t, n) for t, n in cur.fetchall()]
+    """Return (topic, chunk_count) pairs by scanning the collection's metadata."""
+    col = get_collection(collection)
+    got = col.get(include=["metadatas"])
+    counts: dict[str, int] = {}
+    for m in got.get("metadatas") or []:
+        t = (m or {}).get("topic", "(none)")
+        counts[t] = counts.get(t, 0) + 1
+    return sorted(counts.items())
 
 
 def format_passages(passages: list[Passage]) -> str:
@@ -98,6 +95,7 @@ def format_passages(passages: list[Passage]) -> str:
         locstr = " · ".join(loc)
         out.append(
             f"[{i+1}] {p.source}" + (f" ({locstr})" if locstr else "")
-            + f" — relevance {p.score:.2f}\n{p.content}"
+            + f" — relevance {p.score:.3f}\n{p.content[:500]}"
+            + ("…" if len(p.content) > 500 else "")
         )
     return "\n\n".join(out)

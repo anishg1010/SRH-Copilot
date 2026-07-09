@@ -1,19 +1,15 @@
-"""RAG inspection helpers for tuning.
+"""RAG inspection / demo helper for the retrieval prototype.
 
     python -m copilot.rag.inspect topics teaching
-        → list topics and chunk counts in a collection
-
-    python -m copilot.rag.inspect query teaching "competence-oriented assessment" 
-        → run a retrieval and print the ranked passages with provenance + scores
-
-    python -m copilot.rag.inspect query teaching "..." --topics 02_CORE_Principle_and_Modular_Design --k 8
-
-Use this to eyeball whether chunking/thresholds are returning the right sources
-before wiring anything into the agent.
+    python -m copilot.rag.inspect query teaching "How does the CORE principle work?"
+    python -m copilot.rag.inspect query teaching "assessment rubric" --topics 02_CORE_Principle_and_Modular_Design --k 8
+    python -m copilot.rag.inspect query teaching "..." --json     # machine-readable output
 """
 from __future__ import annotations
 
 import argparse
+import json
+from dataclasses import asdict
 
 from copilot.rag.retriever import format_passages, list_topics, retrieve
 
@@ -31,6 +27,7 @@ def main() -> None:
     q.add_argument("--topics", nargs="*", default=None)
     q.add_argument("--k", type=int, default=6)
     q.add_argument("--min-score", type=float, default=None)
+    q.add_argument("--json", action="store_true", help="print raw JSON results")
 
     args = ap.parse_args()
 
@@ -45,8 +42,11 @@ def main() -> None:
             args.collection, args.text,
             k=args.k, topics=args.topics, min_score=args.min_score,
         )
-        print(f"Query: {args.text!r}  (k={args.k}, topics={args.topics})\n")
-        print(format_passages(passages))
+        if args.json:
+            print(json.dumps([asdict(p) for p in passages], ensure_ascii=False, indent=2))
+        else:
+            print(f"Query: {args.text!r}  (k={args.k}, topics={args.topics})\n")
+            print(format_passages(passages))
 
 
 if __name__ == "__main__":

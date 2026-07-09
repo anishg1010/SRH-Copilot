@@ -1,49 +1,57 @@
-"""Initialize Postgres: pgvector extension + a single shared documents table.
+"""ChromaDB vector store (local, persistent).
 
-Every agent's documents live in one table, partitioned logically by a `collection`
-column (= the agent slug). Retrieval always filters by collection, so agents never
-see each other's knowledge. One table keeps ops simple; the index scales fine and
-you can PARTITION BY LIST(collection) later if a collection grows very large.
+Replaces the pgvector store. Chroma persists to `settings.chroma_dir` on disk —
+no server, no Docker, no network. Each agent/collection maps to a Chroma
+collection named `{prefix}_{collection}`.
 
-LangGraph checkpoint tables are created separately by PostgresSaver.setup().
+We pass our OWN precomputed embeddings (from copilot.rag.embeddings), so Chroma
+is used purely as the vector index + metadata store — keeping the embedding
+provider swappable independently of Chroma.
 """
 from __future__ import annotations
 
-import psycopg
+from functools import lru_cache
 
-from copilot.core.settings import settings
-
-
-def init_db() -> None:
-    with psycopg.connect(settings.database_url, autocommit=True) as conn, conn.cursor() as cur:
-        cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-        cur.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS documents (
-                id          BIGSERIAL PRIMARY KEY,
-                collection  TEXT NOT NULL,
-                source      TEXT NOT NULL,
-                chunk_index INT  NOT NULL,
-                content     TEXT NOT NULL,
-                metadata    JSONB DEFAULT '{{}}'::jsonb,
-                embedding   VECTOR({settings.embed_dim}) NOT NULL
-            );
-            """
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS documents_embedding_idx "
-            "ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS documents_collection_idx ON documents (collection);"
-        )
-        # GIN index on metadata so topic filters (metadata->>'topic') stay fast.
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS documents_metadata_idx "
-            "ON documents USING gin (metadata);"
-        )
-    print("✓ pgvector enabled, shared `documents` table + indexes ready.")
+from copilot.core.config import config as settings
 
 
-if __name__ == "__main__":
-    init_db()
+@lru_cache(maxsize=1)
+def _client():
+    import chromadb
+    return chromadb.PersistentClient(path=settings.chroma_dir)
+
+
+def _collection_name(collection: str) -> str:
+    return f"{settings.chroma_collection_prefix}_{collection}"
+
+
+def get_collection(collection: str):
+    """Get or create the Chroma collection for an agent slug (cosine space)."""
+    return _client().get_or_create_collection(
+        name=_collection_name(collection),
+        metadata={"hnsw:space": "cosine"},
+    )
+
+
+def reset_collection(collection: str) -> None:
+    """Delete the collection if it exists (used by --reset)."""
+    name = _collection_name(collection)
+    try:
+        _client().delete_collection(name)
+    except Exception:
+        pass  # didn't exist
+
+
+def add_chunks(
+    collection: str,
+    ids: list[str],
+    documents: list[str],
+    embeddings: list[list[float]],
+    metadatas: list[dict],
+) -> None:
+    col = get_collection(collection)
+    col.add(ids=ids, documents=documents, embeddings=embeddings, metadatas=metadatas)
+
+
+def count(collection: str) -> int:
+    return get_collection(collection).count()

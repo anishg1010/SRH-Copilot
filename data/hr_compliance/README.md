@@ -1,5 +1,4 @@
-# hr_compliance knowledge base
+# hr_compliance knowledge base (placeholder)
 
-Drop this agent's institutional documents (.txt / .md / .pdf) here, then run:
-
-    python -m copilot.rag.ingest hr_compliance ./data/hr_compliance
+Drop this agent's documents here when built. For today only `teaching` is active.
+Ingest later with:  python -m copilot.rag.ingest hr_compliance ./data/hr_compliance

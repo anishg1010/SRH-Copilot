@@ -5,8 +5,11 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ipynb_checkpoints/
-.ipynb_checkpoints/
-data/teaching/**
+chroma_db/
+artifacts/
+doc_json/
+categorization_mapping.csv
 data/teaching/**
 !data/teaching/README.md
-data/teaching/.ipynb_checkpoints/
+data_categorized/**
+!data_categorized/README.md
