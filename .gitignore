@@ -13,3 +13,14 @@ data/teaching/**
 !data/teaching/README.md
 data_categorized/**
 !data_categorized/README.md
+
+# doc-chunking pipeline
+raw/
+output/
+output_sample/
+sample/
+chroma/
+run.log
+nohup.out
+*.bak
+vectors.npy
