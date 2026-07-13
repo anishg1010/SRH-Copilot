@@ -26,7 +26,7 @@ class Config(BaseSettings):
     # ─────────────────────────────────────────────────────────────
     # VECTOR STORE (ChromaDB — local, persistent)
     # ─────────────────────────────────────────────────────────────
-    chroma_dir: str = "./chroma_db"
+    chroma_dir: str = str(__import__("pathlib").Path(__file__).resolve().parents[3] / "chroma_db")
     chroma_collection_prefix: str = "copilot"
 
     # ─────────────────────────────────────────────────────────────

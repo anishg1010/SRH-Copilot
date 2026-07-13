@@ -1,13 +1,4 @@
-"""ChromaDB vector store (local, persistent).
-
-Replaces the pgvector store. Chroma persists to `settings.chroma_dir` on disk —
-no server, no Docker, no network. Each agent/collection maps to a Chroma
-collection named `{prefix}_{collection}`.
-
-We pass our OWN precomputed embeddings (from copilot.rag.embeddings), so Chroma
-is used purely as the vector index + metadata store — keeping the embedding
-provider swappable independently of Chroma.
-"""
+"""ChromaDB vector store (local, persistent)."""
 from __future__ import annotations
 
 from functools import lru_cache
@@ -26,7 +17,6 @@ def _collection_name(collection: str) -> str:
 
 
 def get_collection(collection: str):
-    """Get or create the Chroma collection for an agent slug (cosine space)."""
     return _client().get_or_create_collection(
         name=_collection_name(collection),
         metadata={"hnsw:space": "cosine"},
@@ -34,22 +24,32 @@ def get_collection(collection: str):
 
 
 def reset_collection(collection: str) -> None:
-    """Delete the collection if it exists (used by --reset)."""
     name = _collection_name(collection)
     try:
         _client().delete_collection(name)
     except Exception:
-        pass  # didn't exist
+        pass
 
 
-def add_chunks(
-    collection: str,
-    ids: list[str],
-    documents: list[str],
-    embeddings: list[list[float]],
-    metadatas: list[dict],
-) -> None:
+def _clean_metadata(meta: dict) -> dict:
+    """ChromaDB only accepts str/int/float/bool metadata values.
+    Drop None, coerce anything else to string."""
+    clean = {}
+    for k, v in meta.items():
+        if v is None:
+            continue
+        if isinstance(v, bool):
+            clean[k] = v
+        elif isinstance(v, (str, int, float)):
+            clean[k] = v
+        else:
+            clean[k] = str(v)
+    return clean
+
+
+def add_chunks(collection, ids, documents, embeddings, metadatas):
     col = get_collection(collection)
+    metadatas = [_clean_metadata(m) for m in metadatas]
     col.add(ids=ids, documents=documents, embeddings=embeddings, metadatas=metadatas)
 
 
